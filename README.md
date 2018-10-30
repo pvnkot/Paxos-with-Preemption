@@ -13,10 +13,10 @@ Folder Structure:
 		vi.		Pavan_Kottapalli_112027511_A4.pdf
 		vii.	times_main.txt
 		viii.	times_orig.txt
+		
 -------------------------------------------------------------------------------------------------
 main.da contains code for preemption.
 -------------------------------------------------------------------------------------------------
-The files ii, iii, vii and viii are for checking correctness and performance run values. Please clear them periodically if their sizes grows too large.
 
 To execute code:
 
