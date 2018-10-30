@@ -4,16 +4,12 @@ Implementation of Paxos with Preemption in the high level language of DistAlgo
 Please find instructions below on running the DistAlgo code for Paxos code with preemption:
 
 Folder Structure:
-Zip file Pavan_Kottapalli_112027511.zip containing:
-i. README.txt
-ii. correctness_main.txt
-iii. correctness_orig.txt
-iv. main.da
-v. orig.da
-vi. Pavan_Kottapalli_112027511_A4.pdf
-vii. times_main.txt
-viii. times_orig.txt
-		
+
+main.da
+orig.da
+
+among other files
+
 -------------------------------------------------------------------------------------------------
 main.da contains code for preemption.
 -------------------------------------------------------------------------------------------------
