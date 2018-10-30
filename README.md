@@ -5,8 +5,8 @@ Please find instructions below on running the DistAlgo code for Paxos code with 
 
 Folder Structure:
 Zip file Pavan_Kottapalli_112027511.zip containing:
-i. README.txt
-ii. correctness_main.txt
+i. README.txt\n
+ii. correctness_main.txt\n
 iii. correctness_orig.txt
 iv. main.da
 v. orig.da
