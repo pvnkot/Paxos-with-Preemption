@@ -1,0 +1,365 @@
+import sys
+from random import randint
+import random
+import time
+import statistics
+orig = import_da('orig')
+TIMEOUT = 1
+
+class Performance(process):
+    def setup(parent, nlearners:int, runs:int, loss_rate:float, message_delay:float, round_time:float, tout_prop:float, tout_learn:float, implementations):
+        self.times_file = dict()
+        self.elapsed_time = dict()
+        self.elapsed_times = dict()
+        self.process_time = dict()
+        self.process_times = dict()
+        self.values_proposed = dict()
+        self.proposals_learned = dict()
+        self.correctness_file = dict()
+        self.learners_num = dict()
+        self.learning_failed = dict()
+        
+        for implementation in implementations:
+            self.times_file[implementation] = open("times_"+implementation+".txt", "a")
+            self.elapsed_time[implementation] = 0.0
+            self.elapsed_times[implementation] = []
+            self.process_time[implementation] = 0.0
+            self.process_times[implementation] = []
+            self.times_file[implementation].write(implementation.upper()+" Run for: " +str(runs)+" runs, loss rate:"+str(loss_rate)+
+                                                    ", message delay:"+str(message_delay)+
+                                                    ", round time:"+str(round_time)+
+                                                    ", timeout for proposers:"+str(tout_prop)+
+                                                    ", timeout for learners:"+str(tout_learn)+"\n")
+            self.values_proposed[implementation] = set()
+            self.proposals_learned[implementation] = []
+            self.correctness_file[implementation] = open("correctness_"+implementation+".txt", "a")
+            self.learners_num[implementation] = 0.0
+            self.learning_failed[implementation] = False
+            self.correctness_file[implementation].write(implementation.upper()+" Run for: " +str(runs)+" runs, loss rate:"+str(loss_rate)+
+                                                        ", message delay:"+str(message_delay)+
+                                                        ", round time:"+str(round_time)+
+                                                        ", timeout for proposers:"+str(tout_prop)+
+                                                        ", timeout for learners:"+str(tout_learn)+"\n")
+           
+    
+    def receive(msg=('perf_time_start', run_num, elapsed_time_start, process_time_start, implementation), from_= parent):
+        self.elapsed_time[implementation] = elapsed_time_start
+        self.process_time[implementation] = process_time_start
+    
+    def receive(msg=('perf_time_end', run_num, elapsed_time_end, process_time_end, implementation), from_= parent):
+        self.times_file[implementation].write('-'*40 + 'Run number' + str(run_num+1) + '-'*40 + "\n")
+        if not self.learning_failed[implementation]:
+            #Elapsed Time Calculation for every run
+            self.elapsed_time[implementation] = elapsed_time_end - self.elapsed_time[implementation]
+            self.elapsed_times[implementation].append(self.elapsed_time[implementation])
+            self.times_file[implementation].write('Elapsed time is: ' + str(round((self.elapsed_time[implementation]), 5)) + ' seconds.\n')
+            #Process Time Calculation for every run
+            self.process_time[implementation] = process_time_end - self.process_time[implementation]
+            self.process_times[implementation].append(self.process_time[implementation])
+            self.times_file[implementation].write('Process time is: ' + str(round((self.process_time[implementation]), 5)) + ' seconds.\n')
+
+    def receive(msg=('perf_print_times', implementation,), from_= parent):
+        if len(self.elapsed_times[implementation]) > 1:
+            self.times_file[implementation].write(' '*40 + 'Averages and Ranges' + ' '*40 + "\n")
+            #Avg elapsed time
+            self.times_file[implementation].write('Average elapsed time for the '+ str(len(self.elapsed_times[implementation])) + ' runs is: ' 
+                + str(round(statistics.mean(self.elapsed_times[implementation]), 5)) + " seconds.\n")
+            #SD of elapsed time
+            self.times_file[implementation].write('Standard deviation for elapsed time for the '+ str(len(self.elapsed_times[implementation])) + ' runs is: ' 
+                + str(round(statistics.stdev(self.elapsed_times[implementation]), 5)) + " seconds.\n")
+            #RAnge of elapsed time
+            self.times_file[implementation].write('Range for elapsed time for the ' + 
+                str(len(self.elapsed_times[implementation])) + ' runs is: '
+                +str(round(max(self.elapsed_times[implementation])-min(self.elapsed_times[implementation]), 5)) + " seconds.\n")
+            self.times_file[implementation].write('\n' + ' '*100 + '\n')
+            
+
+        if len(self.process_times[implementation]) > 1:
+            self.times_file[implementation].write(' '*40 + 'Averages and Ranges' + ' '*40 + "\n")
+            #Avg process time
+            self.times_file[implementation].write('Average process time for the '+ str(len(self.process_times[implementation])) + ' runs is: ' 
+                + str(round(statistics.mean(self.process_times[implementation]), 5)) + " seconds.\n")
+            #SD of process time
+            self.times_file[implementation].write('Standard deviation for process time for the '+ str(len(self.process_times[implementation])) + ' runs is: ' 
+                + str(round(statistics.stdev(self.process_times[implementation]), 5)) + " seconds.\n\n")
+            #Rangeof process time
+            self.times_file[implementation].write('Range for process time for the ' + 
+                str(len(self.process_times[implementation])) + ' runs is: '
+                +str(round(max(self.process_times[implementation])-min(self.process_times[implementation]), 5)) + " seconds.\n")
+
+            self.times_file[implementation].write('\n' + '%'*80 + '\n')
+    
+    def receive(msg=('perf_value_not_learned_dur_perf', run_num, implementation), from_= learner):
+        if not self.learning_failed[implementation]:
+            self.correctness_file[implementation].write('-'*40 + 'Run number' + str(run_num+1) + '-'*40 + "\n")
+            self.correctness_file[implementation].write('\nTermination condition was violated. \n')
+            self.learning_failed[implementation] = True
+
+    def receive(msg=('perf_refresh_perf', implementation)):
+        self.values_proposed[implementation] = set()
+        self.proposals_learned[implementation] = []
+        self.learners_num[implementation] = 0
+        self.learning_failed[implementation] = False
+        self.process_time[implementation] = 0
+        self.elapsed_time[implementation] = 0
+
+    def run():
+        await(received(('done',)),)
+        send(('done',), to= parent())
+        output('Performance Terminating. Goodbye.')
+
+class Correctness(process):
+    def setup(parent, nlearners:int, runs:int, loss_rate:float, message_delay:float, round_time:float, tout_prop:float, tout_learn:float, implementations):
+        self.values_proposed = dict()
+        self.proposals_learned = dict()
+        self.correctness_file = dict()
+        self.learners_num = dict()
+        self.learning_failed = dict()
+        for implementation in implementations:
+            self.values_proposed[implementation] = set()
+            self.proposals_learned[implementation] = []
+            self.correctness_file[implementation] = open("correctness_"+implementation+".txt", "a")
+            self.learners_num[implementation] = 0.0
+            self.learning_failed[implementation] = False
+            self.correctness_file[implementation].write(implementation.upper()+"Run for: " +str(runs)+" runs, loss rate:"+str(loss_rate)+
+                                                        ", message delay:"+str(message_delay)+
+                                                        ", round time:"+str(round_time)+
+                                                        ", timeout for proposers:"+str(tout_prop)+
+                                                        ", timeout for learners:"+str(tout_learn)+"\n")
+    
+    def receive(msg=('perf_refresh', implementation)):
+        self.values_proposed[implementation] = set()
+        self.proposals_learned[implementation] = []
+        self.learners_num[implementation] = 0
+        self.learning_failed[implementation] = False
+    
+    def receive(msg=('perf_val_proposed', v, implementation)):
+        self.values_proposed[implementation].add(v)
+
+    def receive(msg=('perf_value_learned', v, run_num, implementation), from_=learner):
+        if v not in self.proposals_learned[implementation]:
+            self.proposals_learned[implementation].append(v)
+            self.learners_num[implementation] += 1
+            print_correctness(run_num, implementation)
+
+    def receive(msg=('perf_value_not_learned', run_num, implementation), from_= learner):
+        if not self.learning_failed[implementation]:
+            self.correctness_file[implementation].write('-'*40 + 'Run number' + str(run_num+1) + '-'*40 + "\n")
+            self.correctness_file[implementation].write('\nTermination condition was violated. \n')
+            self.learning_failed[implementation] = True
+
+    def print_correctness(run_num, implementation):
+        if await(len(self.proposals_learned[implementation]) == self.learners_num[implementation]):
+            self.correctness_file[implementation].write('-'*40 + 'Run number' + str(run_num+1) + '-'*40 + "\n")
+            self.correctness_file[implementation].write('Termination condition is satisfied, all the learners have learned a value. \n')
+            self.correctness_file[implementation].write('Values that were proposed are: \n')
+            for value in self.values_proposed[implementation]:
+                self.correctness_file[implementation].write(str(value) + " ")
+            self.correctness_file[implementation].write("\nThe value that was chosen by the learners is: ")
+            for val in self.proposals_learned[implementation]:
+                self.correctness_file[implementation].write(str(val) + "\n\n")
+
+    def run():
+        await(received(('done',)),)
+        send(('done',), to= parent())
+        output('Correctness Terminating. Goodbye.')
+
+
+class Proposer(process):
+    def setup(acceptors:set, benchmark:process, nacceptors:int, loss_rate:float, message_delay:float, round_time:float, tout_prop:float, run_num:int, implementation:str):
+        self.n = None              # proposal number
+        self.majority = acceptors  # majority of acceptors; all in other papers
+        self.correctness = 'Correctness' in str(benchmark)
+        if correctness: 
+            send(('perf_refresh', implementation), to= benchmark)
+        else:
+            send(('perf_refresh_perf', implementation), to= benchmark)
+
+
+    def to_consent():
+        n = (0, self) if n == None else (n[0]+1, self)  # pick a prop num
+        send(('prepare', n), to= majority)
+
+        if await(len(setof(a, received(('respond', _n, _), from_ =a)))
+                 > len(acceptors)/2):
+            v = anyof(setof(v, received(('respond', _n, (n2, v))),
+                            n2==max(setof(n2, received(('respond', _n, (n2, _))))))
+                      or {randint(1,100)})  # any value, pick in 1..100
+            responded = setof(a, received(('respond', _n, _), from_ =a))
+            send(('accept', n, v), to= responded)
+            if correctness: send(('perf_val_proposed', v, implementation), to= benchmark)
+            debug('### chose', correctness)
+        elif some(received(('preempted',n2)), has=
+                n2 > n):
+            #output('### leader 1.3 preempt:', 'r2', r2, 'leader2', leader2)
+            output('Abandoned Proposal Number ', n)
+            n = (n2[0], self)
+            #n = n2
+        elif timeout(tout_prop if tout_prop else TIMEOUT):
+            output('failed proposal number', n)
+
+    def run():
+        while not received(('done',)):
+            to_consent()
+            if round_time:
+                time.sleep(round_time)
+        output('MAIN Proposer terminating.')
+
+    def anyof(s):
+        return next(iter(s)) if s else None
+
+    #overriding definition of the send method, to simulate message loss and message delay.
+    def send(message, to):
+        if not message[0].startswith("perf") and not message[0] == 'done':
+            if not loss_rate:
+                delay = random.uniform(0, message_delay)
+                await(False, timeout=delay)
+                super().send(message, to)
+            elif not message_delay:
+                if not lose_message(loss_rate):
+                    super().send(message, to)
+                else:
+                    output('Losing message', message)
+        else:
+            super().send(message, to)
+    def lose_message(loss_rate):
+        return random.random() < loss_rate
+        
+
+class Acceptor(process):
+    def setup(learners:set, loss_rate:float, message_delay:float, run_num:int, implementation:str): pass
+
+    def receive(msg= ('prepare', n), from_= p):
+        if each(sent(('respond', n2, _)), has= n > n2):
+            maxprop = anyof(setof((n, v), sent(('accepted', n, v)),
+                               n==max(setof(n, sent(('accepted', n, _))))))
+            send(('respond', n, maxprop), to =p)
+
+    def receive(msg= ('accept', n, v)):
+        if not some(sent(('respond', n2, _)), has= n2 > n):
+            send(('accepted', n, v), to= learners)
+    
+    def receive(msg=m, from_= p):
+        if m[0] == 'done':
+            return
+        prop_queue = setof(b, sent(('respond',b,_)))
+        if len(prop_queue) > 0:
+            max_b = max(prop_queue)
+            #output('#max:', max_b)
+            if m[1] < max_b:
+                pass#send(('preempted', max_b), to= p)
+
+    def run():
+        await(received(('done',)))
+        output('MAIN Acceptor terminating.')
+
+    def anyof(s):
+        """return any element of set s if s is not empty or 'None' otherwise"""
+        return next(iter(s)) if s else None
+    
+    #overriding definition of the send method, to simulate message loss and message delay.
+    def send(message, to):
+        if not message[0].startswith("perf") and not message[0] == 'done':
+            if not loss_rate:
+                delay = random.uniform(0, message_delay)
+                await(False, timeout=delay)
+                super().send(message, to)
+            elif not message_delay:
+                if not lose_message(loss_rate):
+                    super().send(message, to)
+                else:
+                    output('Losing message', message)
+        else:
+            super().send(message, to)
+    def lose_message(loss_rate):
+        return random.random() < loss_rate
+
+class Learner(process):
+    def setup(acceptors:set, benchmark:process, loss_rate:float, message_delay:float, tout_learn:float, run_num:int, implementation:str):
+        self.correctness = 'Correctness' in str(benchmark)
+
+    def learn():
+        if await(some(received(('accepted', n, v)),
+                      has= len(setof(a, received(('accepted', _n, _v), from_=a)))
+                           > len(acceptors)/2)):
+            output('learned', n, v)
+            if correctness: send(('perf_value_learned', v, run_num, implementation), to= benchmark)
+
+        elif timeout(tout_learn*10 if tout_learn else TIMEOUT*10):
+            output('failed learning anything')
+            if correctness:
+                send(('perf_value_not_learned', run_num, implementation), to= benchmark)
+            else:
+                send(('perf_value_not_learned_dur_perf', run_num, implementation), to= benchmark)
+
+
+    def run():
+        learn()
+        output('MAIN Learner terminating.')
+        send(('learned', ), to=nodeof(self))
+    
+
+def main():
+    nproposers = int(sys.argv[1]) if len(sys.argv) > 1 else 5
+    nacceptors = int(sys.argv[2]) if len(sys.argv) > 2 else 3
+    nlearners = int(sys.argv[3]) if len(sys.argv) > 3 else 3
+    reps = int(sys.argv[4]) if len(sys.argv) > 4 else 1
+    loss_rate = float(sys.argv[5]) if len(sys.argv) > 5 else 0
+    message_delay = float(sys.argv[6]) if len(sys.argv) > 6 else 0
+    round_time = float(sys.argv[7]) if len(sys.argv) > 7 else 0
+    tout_prop = float(sys.argv[8]) if len(sys.argv) > 8 else 0
+    tout_learn = float(sys.argv[9]) if len(sys.argv) > 9 else 0
+    perf_corr = str(sys.argv[10]) if len(sys.argv) > 10 else 'c'
+
+    implementations = dict()
+    implementations['main'] = dict()
+    implementations['main']['Acceptor'] = self.Acceptor
+    implementations['main']['Proposer'] = self.Proposer
+    implementations['main']['Learner'] = self.Learner
+
+    implementations['orig'] = dict()
+    implementations['orig']['Acceptor'] = orig.Acceptor
+    implementations['orig']['Proposer'] = orig.Proposer
+    implementations['orig']['Learner'] = orig.Learner
+    run_performance = False
+
+    
+    if perf_corr != 'c':
+        benchmark = new(Performance,(self, nlearners, reps, loss_rate, message_delay, 
+                round_time, tout_prop, tout_learn, list(implementations.keys())), num= 1)
+        run_performance = True
+    else:
+        benchmark = new(Correctness,(self, nlearners, reps, loss_rate, message_delay, 
+                round_time, tout_prop, tout_learn, list(implementations.keys())), num= 1)
+
+    start(benchmark)
+
+    for implementation in implementations:
+        for i in range(reps):
+            acceptors = new(implementations[implementation]['Acceptor'], num= nacceptors)
+            proposers = new(implementations[implementation]['Proposer'], (acceptors, benchmark, nacceptors,
+                             loss_rate, message_delay, round_time, tout_prop, i, implementation), num= nproposers)
+            learners = new(implementations[implementation]['Learner'], (acceptors, benchmark, 
+                             loss_rate, message_delay, tout_learn, i, implementation), num= nlearners)
+            for p in acceptors: setup(p, (learners, loss_rate, message_delay, i, implementation))
+            if run_performance: send(('perf_time_start', i, time.time(), time.process_time(), implementation), to= benchmark)
+            start(acceptors | proposers | learners)
+            await(each(l in learners, has=received(('learned',), from_=l)))
+            send(('done',), to= (acceptors|proposers))
+            if run_performance: send(('perf_time_end', i, time.time(), time.process_time(), implementation), to= benchmark)
+            print('>'*45 + 'Execution ends for '+ implementation.upper() + ' Run ' + str((i+1)) +'<'*50)
+    
+    if run_performance: 
+        for implementation in implementations:
+            send(('perf_print_times', implementation,), to= benchmark)
+    #output("WAITING FOR CONTROLLER TO TERMINATE")
+    send(('done',), to= benchmark)
+    await(received(('done',), from_= benchmark), timeout=1)
+    output("--"*15, 'MAIN PROCESS TERMINATING.')
+
+# This is an executable specification of the algorithm described in
+# Lamport, L. (2001).  Paxos Made Simple.  ACM SIGACT News 
+# (Distributed Computing Column), 32(4):51-58, December.
+
+# This code includes setup and termination for running repeated rounds until
+# the learners all terminate after learning the consent value or timeout.

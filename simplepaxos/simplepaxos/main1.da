@@ -1,0 +1,111 @@
+import sys
+from random import randint
+import time
+TIMEOUT = 1
+
+class Proposer(process):
+    def setup(acceptors:set):
+        self.n = None              # proposal number
+        self.majority = acceptors  # majority of acceptors; all in other papers
+        self.prem_prop = set()
+
+    def to_consent():
+        n = (0, self) if n == None else (n[0]+1, self)  # pick a prop num
+        send(('prepare', n), to= majority)
+        
+        if await(len(setof(a, received(('respond', _n, _), from_ =a)))
+                 > len(acceptors)/2):
+            v = anyof(setof(v, received(('respond', _n, (n2, v))),
+                            n2==max(setof(n2, received(('respond', _n, (n2, _))))))
+                      or {randint(1,100)})  # any value, pick in 1..100
+            responded = setof(a, received(('respond', _n, _), from_ =a))
+            #time.sleep(1)
+            send(('accept', n, v), to= responded)
+            debug('### chose', n, v)
+        elif some(received(('preempted',n2)), has=
+                n2 > n):
+            #output('### leader 1.3 preempt:', 'r2', r2, 'leader2', leader2)
+            output('Abandoned Proposal Number ', n)
+            n = n2
+        elif timeout(TIMEOUT):
+            output('failed proposal number', n)
+    
+    # def receive(msg= ('preempted', n), from_= a):
+    #     if (len(setof(a, received(('preempted', _n), from_= a))) > 0):
+    #         prem_prop.add(n)
+
+    def run():
+        while not received(('done',)):
+            to_consent()
+        output('Proposer terminating.')
+
+    def anyof(s):
+        return next(iter(s)) if s else None
+
+class Acceptor(process):
+    def setup(learners:set): pass
+
+    def receive(msg= ('prepare', n), from_= p):
+        if each(sent(('respond', n2, _)), has= n > n2):
+            maxprop = anyof(setof((n, v), sent(('accepted', n, v)),
+                               n==max(setof(n, sent(('accepted', n, _))))))
+            send(('respond', n, maxprop), to =p)
+
+    def receive(msg= ('accept', n, v)):
+        if not some(sent(('respond', n2, _)), has= n2 > n):
+            send(('accepted', n, v), to= learners)
+    
+    def receive(msg=m, from_= p):
+        if m[0] == 'done':
+            return
+        max_b = max(setof(b, received(('prepare',b))) | setof(b, received(('accept',b,_))))
+        if m[1] < max_b:
+            send(('preempted', max_b), to= p)
+
+    def run():
+        await(received(('done',)))
+        output('Acceptor terminating.')
+
+    def anyof(s):
+        """return any element of set s if s is not empty or 'None' otherwise"""
+        return next(iter(s)) if s else None
+
+class Learner(process):
+    def setup(acceptors:set): pass
+
+    def learn():
+        if await(some(received(('accepted', n, v)),
+                      has= len(setof(a, received(('accepted', _n, _v), from_=a)))
+                           > len(acceptors)/2)):
+            output('learned', n, v)
+            
+
+        elif timeout(TIMEOUT * 10):
+            output('failed learning anything')
+
+    def run():
+        learn()
+        output('Learner terminating.')
+        send(('learned', ), to=nodeof(self))
+
+def main():
+    nacceptors = int(sys.argv[1]) if len(sys.argv) > 1 else 3
+    nproposers = int(sys.argv[2]) if len(sys.argv) > 2 else 5
+    nlearners = int(sys.argv[3]) if len(sys.argv) > 3 else 3
+
+    acceptors = new(Acceptor, num= nacceptors)
+    proposers = new(Proposer, (acceptors,), num= nproposers)
+    learners = new(Learner, (acceptors,), num= nlearners)
+    for p in acceptors: setup(p, (learners,))
+    start(acceptors | proposers | learners)
+
+    await(each(l in learners, has=received(('learned',), from_=l)))
+    output('done')
+    send(('done',), to= (acceptors|proposers))
+
+# This is an executable specification of the algorithm described in
+# Lamport, L. (2001).  Paxos Made Simple.  ACM SIGACT News 
+# (Distributed Computing Column), 32(4):51-58, December.
+
+# This code includes setup and termination for running repeated rounds until
+# the learners all terminate after learning the consent value or timeout.
